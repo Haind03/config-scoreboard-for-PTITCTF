@@ -1,0 +1,21 @@
+
+<div class="tab-pane fade show active" id="switch" role="tabpanel">
+    {% set value = get_config('matrix:switch') %}
+    <div class="form-group">
+        <label for="router-type">
+            {{"Plugin Switch" if en else "Công tắc plugin bảng điểm"}}
+            <small class="form-text text-muted">
+                {{"Whether to enable the scoreboard plugin" if en else "Bật hay tắt plugin bảng điểm"}}
+            </small>
+        </label>
+        <select id="switch" name="matrix:switch" class="form-control custom-select">
+            <option value="true" {{ "selected" if value == true }}>{{"ON" if en else "BẬT"}}</option>
+            <option value="false" {{ "selected" if value == false }}>{{"OFF" if en else "TẮT"}}</option>
+        </select>
+    </div>
+    <div class="submit-row float-right">
+        <button type="submit" tabindex="0" class="btn btn-md btn-primary btn-outlined">
+            {{"Confirm" if en else "Xác nhận"}}
+        </button>
+    </div>
+</div>

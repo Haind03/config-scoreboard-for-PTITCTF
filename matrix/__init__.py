@@ -1,0 +1,359 @@
+import datetime
+from collections import defaultdict
+from decimal import Decimal, ROUND_HALF_UP
+from functools import wraps
+
+from flask import render_template, Blueprint, url_for, redirect, request
+from sqlalchemy.sql import or_
+
+import CTFd.utils.scores
+from CTFd import utils
+from CTFd.models import db, Solves, Challenges, Users, Teams, Awards
+from CTFd.plugins import register_admin_plugin_menu_bar
+from CTFd.utils import get_config, set_config
+from CTFd.utils.config import is_scoreboard_frozen, ctf_theme, is_users_mode
+from CTFd.utils.config.visibility import challenges_visible, scores_visible
+from CTFd.utils.dates import ctf_started, ctftime, view_after_ctf, unix_time_to_utc
+from CTFd.utils.decorators import admins_only
+from CTFd.utils.helpers import get_infos
+from CTFd.utils.modes import TEAMS_MODE
+from CTFd.utils.user import is_admin, authed
+
+categories = []
+
+def setup_default_configs():
+    current_year = datetime.datetime.now().year
+    year_string = str(current_year)
+    for key, val in {
+        'setup': 'true',
+        'switch': False,
+        'score_switch': False,
+        'score_grade': year_string,
+        'score_num': 1200,
+    }.items():
+        set_config('matrix:' + key, val)
+
+def load(app):
+    plugin_name = __name__.split('.')[-1]
+    set_config('matrix:plugin_name', plugin_name)
+    app.db.create_all()
+    if not get_config("matrix:setup"):
+        setup_default_configs()
+    if not get_config("matrix:score_switch"):
+        set_config("matrix:score_switch", False)
+    if not get_config("matrix:score_grade"):
+        current_year = datetime.datetime.now().year
+        year_string = str(current_year)
+        set_config("matrix:score_grade", year_string)
+    if not get_config("matrix:score_num"):
+        set_config("matrix:score_num", 1200)
+
+    register_admin_plugin_menu_bar(title='Matrix', route='/plugins/matrix/admin/settings')
+
+    page_blueprint = Blueprint("matrix", __name__, template_folder="templates", static_folder="static", url_prefix="/plugins/matrix")
+    worker_config_commit = None
+
+    @page_blueprint.route('/admin/settings')
+    @admins_only
+    def admin_configs():
+        nonlocal worker_config_commit
+        if not get_config("matrix:switch") != worker_config_commit:
+            worker_config_commit = get_config("matrix:switch")
+        return render_template('matrix_config.html')
+
+    app.register_blueprint(page_blueprint)
+
+    def get_score_by_challenge_id(challenges, challenge_id):
+        for challenge in challenges:
+            if challenge.id == challenge_id:
+                return challenge.value
+        return 0
+
+    def round_int(val):
+        # Ensure integer score with HALF_UP rule
+        return int(Decimal(val).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+
+    def get_matrix_standings():
+        challenges = Challenges.query.filter(*[]).order_by(Challenges.id.asc()).all()
+        solves = db.session.query(
+            Solves.date.label('date'),
+            Solves.challenge_id.label('challenge_id'),
+            Solves.user_id.label('user_id'),
+            Solves.team_id.label('team_id')
+        ).all()
+        # Awards are queried but not used for score anymore (per user's request)
+        awards = db.session.query(
+            Awards.user_id.label('user_id'),
+            Awards.team_id.label('team_id'),
+            Awards.value.label('value'),
+            Awards.date.label('date')
+        ).all()
+        teams = db.session.query(
+            Teams.id.label('team_id'),
+            Teams.name.label('name'),
+            Teams.affiliation.label('affiliation'),
+            Teams.hidden.label('hidden'),
+            Teams.banned.label('banned')
+        ).all()
+        users = db.session.query(
+            Users.id.label('user_id'),
+            Users.name.label('name'),
+            Users.hidden.label('hidden'),
+            Users.banned.label('banned')
+        ).all()
+
+        freeze = utils.get_config('freeze')
+        mode = get_config("user_mode")
+        if freeze:
+            freeze = unix_time_to_utc(freeze)
+            solves = [solve for solve in solves if solve.date < freeze]
+            awards = [award for award in awards if award.date < freeze]
+
+        top_solves = defaultdict(list)
+        sorted_solves = sorted(solves, key=lambda x: (x.challenge_id, x.date))
+
+        for solve in sorted_solves:
+            challenge_id = solve.challenge_id
+            if len(top_solves[challenge_id]) >= 3:
+                continue
+            user = next((user for user in users if user.user_id == solve.user_id), None)
+            if not user or user.hidden or user.banned:
+                continue
+
+            if mode == TEAMS_MODE:
+                team = next((team for team in teams if team.team_id == solve.team_id), None)
+                if not team or team.hidden or team.banned:
+                    continue
+
+            top_solves[challenge_id].append({
+                'date': solve.date,
+                'user_id': solve.user_id,
+                'team_id': solve.team_id
+            })
+
+        if mode == TEAMS_MODE:
+            matrix_scores = []
+            for team in teams:
+                if team.hidden or team.banned:
+                    continue
+                team_solves = [solve for solve in solves if solve[3] == team.team_id]
+                total_score = Decimal('0')
+                team_status = []
+
+                for solve in team_solves:
+                    challenge_id = solve[1]
+                    rank = 4
+                    for index, top_solve in enumerate(top_solves[challenge_id]):
+                        if top_solve['team_id'] == team.team_id:
+                            rank = index + 1
+                    score = Decimal(get_score_by_challenge_id(challenges, challenge_id))
+                    if rank == 1:
+                        score *= Decimal('1.1')
+                    elif rank == 2:
+                        score *= Decimal('1.05')
+                    elif rank == 3:
+                        score *= Decimal('1.03')
+                    total_score += score
+                    team_status.append({'challenge_id': challenge_id, 'rank': rank})
+
+                # Do NOT add award values to total_score anymore
+                total_score = round_int(total_score)
+
+                matrix_scores.append({
+                    'name': team.name,
+                    'id': team.team_id,
+                    'total_score': total_score,
+                    'challenge_solved': team_status,
+                    'group': team.affiliation  # Show as PTIT-HN / PTIT-HCM
+                })
+            matrix_scores.sort(key=lambda x: x['total_score'], reverse=True)
+            return matrix_scores
+        else:
+            matrix_scores = []
+            for user in users:
+                if user.hidden or user.banned:
+                    continue
+                user_solves = [solve for solve in solves if solve[2] == user.user_id]
+                total_score = Decimal('0')
+                user_status = []
+
+                for solve in user_solves:
+                    challenge_id = solve[1]
+                    rank = 4
+                    for index, top_solve in enumerate(top_solves[challenge_id]):
+                        if top_solve['user_id'] == user.user_id:
+                            rank = index + 1
+                    score = Decimal(get_score_by_challenge_id(challenges, challenge_id))
+                    if rank == 1:
+                        score *= Decimal('1.1')
+                    elif rank == 2:
+                        score *= Decimal('1.05')
+                    elif rank == 3:
+                        score *= Decimal('1.03')
+                    total_score += score
+                    user_status.append({'challenge_id': challenge_id, 'rank': rank})
+
+                # Do NOT add award values to total_score anymore
+                total_score = round_int(total_score)
+
+                matrix_scores.append({
+                    'name': user.name,
+                    'id': user.user_id,
+                    'total_score': total_score,
+                    'challenge_solved': user_status
+                })
+            matrix_scores.sort(key=lambda x: x['total_score'], reverse=True)
+            return matrix_scores
+
+    def get_challenges():
+        global categories
+        categories = []
+        if not is_admin():
+            if not ctftime():
+                if view_after_ctf():
+                    pass
+                else:
+                    return []
+        if challenges_visible() and (ctf_started() or is_admin()):
+            challenges = db.session.query(
+                Challenges.id,
+                Challenges.name,
+                Challenges.category,
+                Challenges.value
+            ).filter(or_(Challenges.state != 'hidden', Challenges.state is None)).order_by(
+                Challenges.category.asc()).all()
+            category_counts = defaultdict(int)
+            challenges_list = []
+            for x in challenges:
+                challenges_list.append({
+                    'id': x.id,
+                    'name': x.name,
+                    'category': x.category.upper(),
+                    'value': x.value,
+                })
+                category_counts[x.category.upper()] += 1
+            for category, count in category_counts.items():
+                categories.append({'category': category.upper(), 'count': count})
+            categories = sorted(categories, key=lambda x: x['category'])
+            return challenges_list
+        return []
+
+    def matrix_user_get_score(self, admin=False):
+        # Keep consistent with standings: no awards and integer rounding
+        try:
+            challenges = Challenges.query.filter(*[]).order_by(Challenges.id.asc()).all()
+            solves = db.session.query(
+                Solves.date.label('date'),
+                Solves.challenge_id.label('challenge_id'),
+                Solves.user_id.label('user_id')
+            ).all()
+            award_score = db.func.sum(Awards.value).label("award_score")
+            award = db.session.query(award_score).filter_by(user_id=self.id)
+            if not admin:
+                freeze = utils.get_config('freeze')
+                if freeze:
+                    freeze = unix_time_to_utc(freeze)
+                    solves = [solve for solve in solves if solve.date < freeze]
+                    award = award.filter(Awards.date < freeze)
+
+            top_solves = defaultdict(list)
+            sorted_solves = sorted(solves, key=lambda x: (x.challenge_id, x.date))
+            for solve in sorted_solves:
+                challenge_id = solve.challenge_id
+                if len(top_solves[challenge_id]) >= 3:
+                    continue
+                top_solves[challenge_id].append({'date': solve.date, 'user_id': solve.user_id})
+
+            user_solves = [solve for solve in solves if solve[2] == self.id]
+            total_score = Decimal('0')
+            for solve in user_solves:
+                challenge_id = solve[1]
+                rank = 4
+                for index, top_solve in enumerate(top_solves[challenge_id]):
+                    if top_solve['user_id'] == self.id:
+                        rank = index + 1
+                score = Decimal(next((c.value for c in challenges if c.id == challenge_id), 0))
+                if rank == 1:
+                    score *= Decimal('1.1')
+                elif rank == 2:
+                    score *= Decimal('1.05')
+                elif rank == 3:
+                    score *= Decimal('1.03')
+                total_score += score
+
+            # No award addition; round to integer
+            return round_int(total_score)
+        except Exception as e:
+            print(e, flush=True)
+            import traceback as tb
+            print(''.join(tb.format_exception(type(e), e, e.__traceback__)), flush=True)
+            return 0
+
+    def set_matrix_user_score_wrapper(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            if get_config("matrix:switch"):
+                return matrix_user_get_score(*args, **kwargs)
+            else:
+                return func(*args, **kwargs)
+        return wrapper
+
+    CTFd.models.Users.get_score = set_matrix_user_score_wrapper(CTFd.models.Users.get_score)
+
+    def color_hash(text):
+        # kept for compatibility, but not used in the "plain/boxed" template
+        hash_value = 0
+        for char in text:
+            hash_value = ord(char) + ((hash_value << 5) - hash_value)
+            hash_value = hash_value & hash_value
+        h = ((hash_value % 360) + 360) % 360
+        s = (((hash_value % 25) + 25) % 25) + 75
+        l = (((hash_value % 20) + 20) % 20) + 40
+        return f'hsl({h}, {s}%, {l}%)'
+
+    def scoreboard_view():
+        language = request.cookies.get("Scr1wCTFdLanguage", "zh")
+        if scores_visible() and not authed():
+            return redirect(url_for('auth.login', next=request.path))
+        if get_config("matrix:switch"):
+            if language == "zh" or language == "vi":
+                if not scores_visible():
+                    return render_template('scoreboard-matrix.html', errors=['当前分数已隐藏' if language == "zh" else 'Điểm số hiện đang bị ẩn'])
+                if not ctf_started():
+                    return render_template('scoreboard-matrix.html', errors=['比赛尚未开始' if language == "zh" else 'Cuộc thi chưa bắt đầu'])
+            else:
+                if not scores_visible():
+                    return render_template('scoreboard-matrix.html', errors=['Score is currently hidden'])
+                if not ctf_started():
+                    return render_template('scoreboard-matrix.html', errors=['Not Start Yet'])
+            standings = get_matrix_standings()
+            return render_template('scoreboard-matrix.html',
+                                   standings=standings,
+                                   score_frozen=is_scoreboard_frozen(),
+                                   mode='users' if is_users_mode() else 'teams',
+                                   challenges=get_challenges(),
+                                   categories=categories,
+                                   theme=ctf_theme())
+        else:
+            freeze = get_config("freeze")
+            infos = get_infos()
+            if language == "zh" or language == "vi":
+                if freeze:
+                    infos.append("计分板已经冻结。" if language == "zh" else "Bảng điểm đã bị đóng băng.")
+                if not scores_visible():
+                    infos.append("当前分数已隐藏。" if language == "zh" else "Điểm số hiện đang bị ẩn.")
+                if not ctf_started():
+                    infos.append("比赛尚未开始。" if language == "zh" else "Cuộc thi chưa bắt đầu。")
+                    return render_template("scoreboard.html", infos=infos)
+            else:
+                if freeze:
+                    infos.append("Scoreboard is frozen")
+                if not scores_visible():
+                    infos.append("Score is currently hidden")
+                if not ctf_started():
+                    infos.append("Not Start Yet")
+                    return render_template("scoreboard.html", infos=infos)
+            return render_template("scoreboard.html", standings=CTFd.utils.scores.get_standings(), infos=infos)
+
+    app.view_functions['scoreboard.listing'] = scoreboard_view
+    app.add_template_global(color_hash, 'color_hash')

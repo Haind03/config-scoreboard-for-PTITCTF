@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block stylesheets %}
+{{ super() }}
+<style>
+  :root{
+    /* Adjust sticky column widths */
+    --w-place: 56px;
+    --w-team: 200px; /* Reduced team column width */
+    --w-score: 104px;
+  }
+
+  /* Adjust challenge column width to fit 15 columns */
+  th.chalname{
+    height:78px; width:48px; min-width:48px; max-width:48px; vertical-align:bottom; padding:0; font-size:12px; line-height:1;
+  }
+
+  .chalname > div {
+    position: relative;
+    left: 26px;
+    height: 100%;
+    overflow: hidden;
+    transform: skew(-45deg, 0deg); /* Skew the column header */
+  }
+
+  .chalname span {
+    position: absolute;
+    bottom: 28px;
+    left: -30px;
+    width: 92px;
+    transform: skew(45deg, 0deg) rotate(315deg); /* Rotate and skew text */
+    display: inline-block;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+  }
+
+  .col-team {
+    text-align: center; /* Center align Team column */
+  }
+
+  .legend-container {
+    margin-top: 32px; /* Add spacing below the table */
+    text-align: center; /* Center align the legend */
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .check {
+    font-weight: 700;
+    font-size: 18px;
+    color: #2e7d32; /* Restore green color for the check icon */
+  }
+
+  /* Add vertical line between Rank and Team */
+  .col-place {
+    border-right: 2px solid var(--line-strong); /* Add vertical line */
+  }
+</style>
+{% endblock %}
+
+{% set en = request.cookies.get('Scr1wCTFdLanguage') == 'en' %}
+{% set mode_url = 'teams' if get_config('user_mode') == 'teams' else 'users' %}
+
+{% block content %}
+<div class="jumbotron home">
+  <div class="container">
+    <h1><b>{{ "Scoreboard" if en else "Bảng điểm" }}</b></h1>
+  </div>
+</div>
+
+<div class="container main-container">
+  {% include "components/errors.html" %}
+
+  {% if standings %}
+  <div class="matrix dragscroll">
+    <table id="scoreboard" class="table">
+      <thead>
+      <tr>
+        <th rowspan="3" class="sticky col-place"><b>{{ "Rank" }}</b></th>
+        <th rowspan="3" class="sticky col-team"><b>{{ "Team" }}</b></th>
+        <th rowspan="3" class="sticky col-score score-col"><b>{{ "Score" }}</b></th>
+
+        {% for cat in categories %}
+          <th class="table-category-header" colspan="{{ cat.count }}"><b>{{ cat.category }}</b></th>
+        {% endfor %}
+      </tr>
+      <tr>
+        {% for chal in challenges %}
+          {% set i = loop.index0 %}
+          {% set prevcat = challenges[i-1].category if i>0 else None %}
+          {% set nextcat = challenges[i+1].category if i+1 < (challenges|length) else None %}
+          {% set is_first = prevcat != chal.category %}
+          {% set is_last  = nextcat != chal.category %}
+          <th class="chalname {{ 'cat-first' if is_first }} {{ 'cat-last' if is_last }}" title="{{ chal.category }}">
+            <div><span>{{ chal.name }}</span></div>
+          </th>
+        {% endfor %}
+      </tr>
+      <tr>
+        {% for chal in challenges %}
+          {% set i = loop.index0 %}
+          {% set prevcat = challenges[i-1].category if i>0 else None %}
+          {% set nextcat = challenges[i+1].category if i+1 < (challenges|length) else None %}
+          {% set is_first = prevcat != chal.category %}
+          {% set is_last  = nextcat != chal.category %}
+          <th class="score {{ 'cat-first' if is_first }} {{ 'cat-last' if is_last }}">{{ chal.value }}</th>
+        {% endfor %}
+      </tr>
+      </thead>
+
+      <tbody>
+      {% for team in standings %}
+        <tr>
+          <td class="sticky col-place">{{ loop.index }}</td>
+          <td class="sticky col-team">
+            <a class="team-link" href="{{ request.script_root }}/{{ mode_url }}/{{ team.id }}" target="_blank">{{ team.name }}</a>
+          </td>
+          <td class="sticky col-score score-col">{{ team.total_score }}</td>
+
+          {% for chal in challenges %}
+            {% set i = loop.index0 %}
+            {% set prevcat = challenges[i-1].category if i>0 else None %}
+            {% set nextcat = challenges[i+1].category if i+1 < (challenges|length) else None %}
+            {% set is_first = prevcat != chal.category %}
+            {% set is_last  = nextcat != chal.category %}
+
+            {% set ns = namespace(solved=false, rank=0, icon='') %}
+            {% for sc in team.challenge_solved %}
+              {% if sc.challenge_id == chal.id %}
+                {% set ns.solved = true %}
+                {% set ns.rank = sc.rank %}
+                {% if ns.rank == 1 %}
+                  {% set ns.icon = '🥇' %}
+                {% elif ns.rank == 2 %}
+                  {% set ns.icon = '🥈' %}
+                {% elif ns.rank == 3 %}
+                  {% set ns.icon = '🥉' %}
+                {% else %}
+                  {% set ns.icon = '✔' %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+
+            <td class="chalmark {{ 'cat-first' if is_first }} {{ 'cat-last' if is_last }} {{ 'is-solved' if ns.solved }}">
+              {% if ns.solved %}
+                {% if ns.icon == '✔' %}
+                  <span class="check">✔</span>
+                {% else %}
+                  <span class="mark">{{ ns.icon }}</span>
+                {% endif %}
+              {% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="legend-container">
+    <b>{{ "Legend" if en else "Chú thích" }}:</b>
+    <span class="mark">🥇</span> 1st + 10% &nbsp; <span class="mark">🥈</span> 2nd + 5% &nbsp; <span class="mark">🥉</span> 3rd + 3% &nbsp; <span class="check">✔</span> {{ "Solved" if en else "Đã giải" }}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ request.script_root }}/plugins/matrix/static/dragscroll.js"></script>
+<script>
+  // highlight theo cột cho dễ dò
+  document.addEventListener('DOMContentLoaded', () => {
+    const table = document.getElementById('scoreboard');
+    if (!table) return;
+    let last = -1;
+    table.addEventListener('mouseover', e => {
+      const cell = e.target.closest('td,th'); if (!cell) return;
+      const col = cell.cellIndex; if (col === last) return;
+      table.querySelectorAll('.col-hover').forEach(el => el.classList.remove('col-hover'));
+      for (const r of table.rows){ if (r.cells[col]) r.cells[col].classList.add('col-hover'); }
+      last = col;
+    });
+    table.addEventListener('mouseleave', () => {
+      table.querySelectorAll('.col-hover').forEach(el => el.classList.remove('col-hover'));
+      last = -1;
+    });
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,30 @@
+
+{% extends "admin/base.html" %}
+
+{% if request.cookies.get('Scr1wCTFdLanguage') == 'en' %}
+{% set en = true %}
+{% else %}
+{% set en = false %}
+{% endif %}
+
+{% block content %}
+    <div class="jumbotron">
+        <div class="container">
+            <h1><b>{{"Matrix Scoreboard Setting" if en else "Cài đặt plugin bảng điểm"}}</b></h1>
+        </div>
+    </div>
+    <div class="container">
+        <div class="row">
+            <div class="col-md-3">
+                <ul class="nav nav-pills flex-column">
+                    {% block menu %}{% endblock %}
+                </ul>
+            </div>
+            <div class="col-md-9">
+                <div class="tab-content">
+                    {% block panel %}{% endblock %}
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
