@@ -312,15 +312,15 @@ def load(app):
         return f'hsl({h}, {s}%, {l}%)'
 
     def scoreboard_view():
-        language = request.cookies.get("Scr1wCTFdLanguage", "zh")
+        language = request.cookies.get("Scr1wCTFdLanguage", "vi")  # Default to Vietnamese
         if scores_visible() and not authed():
             return redirect(url_for('auth.login', next=request.path))
         if get_config("matrix:switch"):
-            if language == "zh" or language == "vi":
+            if language == "vi":
                 if not scores_visible():
-                    return render_template('scoreboard-matrix.html', errors=['当前分数已隐藏' if language == "zh" else 'Điểm số hiện đang bị ẩn'])
+                    return render_template('scoreboard-matrix.html', errors=['Điểm số hiện đang bị ẩn'])
                 if not ctf_started():
-                    return render_template('scoreboard-matrix.html', errors=['比赛尚未开始' if language == "zh" else 'Cuộc thi chưa bắt đầu'])
+                    return render_template('scoreboard-matrix.html', errors=['Cuộc thi chưa bắt đầu'])
             else:
                 if not scores_visible():
                     return render_template('scoreboard-matrix.html', errors=['Score is currently hidden'])
@@ -337,13 +337,13 @@ def load(app):
         else:
             freeze = get_config("freeze")
             infos = get_infos()
-            if language == "zh" or language == "vi":
+            if language == "vi":
                 if freeze:
-                    infos.append("计分板已经冻结。" if language == "zh" else "Bảng điểm đã bị đóng băng.")
+                    infos.append("Bảng điểm đã bị đóng băng.")
                 if not scores_visible():
-                    infos.append("当前分数已隐藏。" if language == "zh" else "Điểm số hiện đang bị ẩn.")
+                    infos.append("Điểm số hiện đang bị ẩn.")
                 if not ctf_started():
-                    infos.append("比赛尚未开始。" if language == "zh" else "Cuộc thi chưa bắt đầu。")
+                    infos.append("Cuộc thi chưa bắt đầu。")
                     return render_template("scoreboard.html", infos=infos)
             else:
                 if freeze:

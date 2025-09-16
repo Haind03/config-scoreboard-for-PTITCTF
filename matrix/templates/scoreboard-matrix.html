@@ -4,9 +4,9 @@
 <style>
   :root{
     /* Adjust sticky column widths */
-    --w-place: 56px;
-    --w-team: 200px; /* Reduced team column width */
-    --w-score: 104px;
+    --w-place: 40px; /* Reduced width for Rank column */
+    --w-team: 150px; /* Reduced width for Team column */
+    --w-score: 60px; /* Reduced width for Score column */
     --w-divider: 16px; /* Width for the empty divider column */
   }
 
@@ -53,12 +53,15 @@
   }
 
   .matrix {
+    display: flex;
+    justify-content: center; /* Center the table horizontally */
     overflow-x: auto; /* Enable horizontal scrolling */
     max-width: 100%; /* Ensure it doesn't exceed the container */
     border: 1px solid var(--line); /* Add border for better visibility */
   }
 
   table#scoreboard {
+    margin: auto; /* Center the table */
     table-layout: auto; /* Allow flexible column widths */
     width: max-content; /* Ensure table width adjusts to content */
   }
@@ -85,9 +88,16 @@
     background: var(--bg);
   }
 
+  .col-after-score {
+    position: sticky;
+    left: calc(var(--w-place) + var(--w-team) + var(--w-score)); /* Position it after the Score column */
+    z-index: 3; /* Ensure it stays on top */
+    background: var(--bg); /* Ensure consistent background color */
+  }
+
   /* Ensure non-sticky columns scroll below sticky ones */
-  .matrix td:not(.col-place):not(.col-team):not(.col-score),
-  .matrix th:not(.col-place):not(.col-team):not(.col-score) {
+  .matrix td:not(.col-place):not(.col-team):not(.col-score):not(.col-after-score),
+  .matrix th:not(.col-place):not(.col-team):not(.col-score):not(.col-after-score) {
     position: relative;
     z-index: 1;
   }
@@ -113,10 +123,9 @@
     <table id="scoreboard" class="table">
       <thead>
       <tr>
-        <th rowspan="3" class="sticky col-place"><b>{{ "Rank" }}</b></th>
-        <th rowspan="3" class="sticky col-team"><b>{{ "Team" }}</b></th>
-        <th rowspan="3" class="sticky col-score score-col"><b>{{ "Score" }}</b></th>
-        <th rowspan="3" class=""><b></b></th>
+        <th rowspan="4" class="sticky col-place"><b>{{ "Rank" }}</b></th>
+        <th rowspan="4" class="sticky col-team"><b>{{ "Team" }}</b></th>
+        <th rowspan="4" class="sticky col-score score-col"><b>{{ "Score" }}</b></th>
 
         {% for cat in categories %}
           <th class="table-category-header" colspan="{{ cat.count }}"><b>{{ cat.category }}</b></th>
@@ -174,15 +183,15 @@
                 {% elif ns.rank == 3 %}
                   {% set ns.icon = '🥉' %}
                 {% else %}
-                  {% set ns.icon = '✔' %}
+                  {% set ns.icon = '🚩' %}
                 {% endif %}
               {% endif %}
             {% endfor %}
 
             <td class="chalmark {{ 'cat-first' if is_first }} {{ 'cat-last' if is_last }} {{ 'is-solved' if ns.solved }}">
               {% if ns.solved %}
-                {% if ns.icon == '✔' %}
-                  <span class="check">✔</span>
+                {% if ns.icon == '🚩' %}
+                  <span class="check">🚩</span> {# Changed check icon to triangular flag icon #}
                 {% else %}
                   <span class="mark">{{ ns.icon }}</span>
                 {% endif %}
@@ -195,8 +204,8 @@
     </table>
   </div>
   <div class="legend-container">
-    <b>{{ "Legend" if en else "Chú thích" }}:</b>
-    <span class="mark">🥇</span> 1st + 10% &nbsp; <span class="mark">🥈</span> 2nd + 5% &nbsp; <span class="mark">🥉</span> 3rd + 3% &nbsp; <span class="check">✔</span> {{ "Solved" if en else "Đã giải" }}
+    <b>{{ "Legend" if en else "Điểm thưởng" }}:</b>
+    <span class="mark">🥇</span> 1st + 10% &nbsp; <span class="mark">🥈</span> 2nd + 5% &nbsp; <span class="mark">🥉</span> 3rd + 3% &nbsp; <span class="check">🚩</span> {{ "Solved" if en else "Đã giải" }}
   </div>
   {% endif %}
 </div>
