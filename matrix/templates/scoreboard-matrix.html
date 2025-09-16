@@ -7,9 +7,10 @@
     --w-place: 56px;
     --w-team: 200px; /* Reduced team column width */
     --w-score: 104px;
+    --w-divider: 16px; /* Width for the empty divider column */
   }
 
-  /* Adjust challenge column width to fit 15 columns */
+  /* Adjust challenge column width */
   th.chalname{
     height:78px; width:48px; min-width:48px; max-width:48px; vertical-align:bottom; padding:0; font-size:12px; line-height:1;
   }
@@ -51,10 +52,46 @@
     color: #2e7d32; /* Restore green color for the check icon */
   }
 
-  /* Add vertical line between Rank and Team */
-  .col-place {
-    border-right: 2px solid var(--line-strong); /* Add vertical line */
+  .matrix {
+    overflow-x: auto; /* Enable horizontal scrolling */
+    max-width: 100%; /* Ensure it doesn't exceed the container */
+    border: 1px solid var(--line); /* Add border for better visibility */
   }
+
+  table#scoreboard {
+    table-layout: auto; /* Allow flexible column widths */
+    width: max-content; /* Ensure table width adjusts to content */
+  }
+
+  /* Sticky columns for Rank, Team, and Score */
+  .col-place {
+    position: sticky;
+    left: 0;
+    z-index: 3; /* Ensure sticky columns are always on top */
+    background: var(--bg);
+  }
+
+  .col-team {
+    position: sticky;
+    left: var(--w-place);
+    z-index: 3; /* Ensure sticky columns are always on top */
+    background: var(--bg);
+  }
+
+  .col-score {
+    position: sticky;
+    left: calc(var(--w-place) + var(--w-team));
+    z-index: 3; /* Ensure sticky columns are always on top */
+    background: var(--bg);
+  }
+
+  /* Ensure non-sticky columns scroll below sticky ones */
+  .matrix td:not(.col-place):not(.col-team):not(.col-score),
+  .matrix th:not(.col-place):not(.col-team):not(.col-score) {
+    position: relative;
+    z-index: 1;
+  }
+
 </style>
 {% endblock %}
 
@@ -79,6 +116,7 @@
         <th rowspan="3" class="sticky col-place"><b>{{ "Rank" }}</b></th>
         <th rowspan="3" class="sticky col-team"><b>{{ "Team" }}</b></th>
         <th rowspan="3" class="sticky col-score score-col"><b>{{ "Score" }}</b></th>
+        <th rowspan="3" class=""><b></b></th>
 
         {% for cat in categories %}
           <th class="table-category-header" colspan="{{ cat.count }}"><b>{{ cat.category }}</b></th>
@@ -184,6 +222,17 @@
       table.querySelectorAll('.col-hover').forEach(el => el.classList.remove('col-hover'));
       last = -1;
     });
+
+    // Reset functionality to show full scoreboard
+    const resetButton = document.getElementById('reset-button');
+    if (resetButton) {
+      resetButton.addEventListener('click', () => {
+        const matrixContainer = document.querySelector('.matrix');
+        if (matrixContainer) {
+          matrixContainer.scrollLeft = 0; // Scroll to the beginning
+        }
+      });
+    }
   });
 </script>
 {% endblock %}
