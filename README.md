@@ -1,4 +1,4 @@
-# PTIT CTF – Matrix Scoreboard (CTFd Plugin)
+# PTIT CTF 2025 – Matrix Scoreboard (CTFd Plugin)
 
 <img width="998" height="1070" alt="image" src="https://github.com/user-attachments/assets/85f58d48-4419-47f8-9387-0ff71f8fdf5c" />
 
