@@ -1,5 +1,8 @@
 # PTIT CTF – Matrix Scoreboard (CTFd Plugin)
 
+<img width="998" height="1070" alt="image" src="https://github.com/user-attachments/assets/85f58d48-4419-47f8-9387-0ff71f8fdf5c" />
+
+
 > **Một plugin scoreboard dạng ma trận (matrix) cho CTFd**, tối ưu cho các cuộc thi kiểu Jeopardy.
 > Hiển thị đội × hạng mục × challenge theo dạng lưới, hỗ trợ nhóm đội (PTIT‑HN/PTIT‑HCM), huy chương 🥇🥈🥉,
 > cột/tiêu đề cố định (sticky), tiêu đề rotate, “bounty” tags, và API JSON phục vụ tích hợp.
