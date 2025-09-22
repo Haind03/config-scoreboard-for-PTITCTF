@@ -1,0 +1,270 @@
+#!/usr/bin/env python3
+"""
+build_recon_simple.py
+─────────────────────
+Minimal recon script for a small RE CTF folder that typically contains
+
+  • one binary  (ELF / EXE)               → run `diec`
+  • one IDA decompile file  *.c / *.h     → strip comments, include clean code
+  • any extra text files (README, etc.)   → copy verbatim
+
+Outputs a single recon_<folder>.txt in the same folder, and prints a live
+progress line showing percentage and the last 5 processed files.
+
+Usage:
+    ./build_recon_simple.py .
+    ./build_recon_simple.py . --depth 2
+    ./build_recon_simple.py . --no-progress
+"""
+
+import os
+import re
+import shutil
+import subprocess
+import sys
+import shlex
+import time
+from pathlib import Path
+from collections import deque
+from typing import List, Optional
+
+# ---------- helpers ---------------------------------------------------------
+SOURCE_EXTS = {".c", ".cpp", ".cc", ".h", ".hpp"}
+TEXT_EXTS = {
+    ".txt", ".md", ".rst", ".json", ".yaml", ".yml", ".ini", ".cfg", ".toml",
+    ".sln", ".csproj", ".html", ".css", ".js", ".ts", ".py", ".cs"
+}
+
+COMMENT_RE_C = re.compile(r"//.*?$|/\*.*?\*/", re.S | re.M)
+COMMENT_RE_PY = re.compile(r"(?m)^\s*#.*$")
+ANSI_RE = re.compile(r"\x1B\[[0-9;]*[mK]")
+SKIP_PATTERNS = (
+    ".nam",              # IDA name database
+    ".id0", ".id1", ".id2", ".id3", ".id4", ".id5",  # old-style chunks
+    ".idb", ".i64", ".til"      # full IDA DB files
+)
+
+def should_skip(file_: Path) -> bool:
+    """True if the path is an IDA-generated artefact we don’t want in recon."""
+    return file_.suffix.lower() in SKIP_PATTERNS or file_.suffix.lower().startswith(".id")
+
+def strip_ansi(s: str) -> str:
+    return ANSI_RE.sub("", s)
+
+def run(cmd: str, max_bytes: int = 50_000) -> str:
+    """Run a shell cmd, return stdout (truncated to max_bytes, decoded, LF-normalized)."""
+    try:
+        out = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError as e:
+        out = e.output or b""
+    if len(out) > max_bytes:
+        out = out[:max_bytes] + b"\n[...truncated...]"
+    text = out.decode(errors="replace")
+    # Normalize CRLF from Windows tools to LF to avoid 0D 0A 0D 0A 0A sequences
+    return text.replace("\r\n", "\n")
+
+def strip_comments(code: str, suffix: str) -> str:
+    if suffix == ".py":
+        code = COMMENT_RE_PY.sub("", code)
+    else:  # C / C++ / headers
+        code = COMMENT_RE_C.sub("", code)
+    code = re.sub(r"\n{3,}", "\n\n", code)   # collapse blank lines
+    return code.strip()
+
+def is_text(path: Path, sniff: int = 2048) -> bool:
+    """Detect text safely (accept UTF-8 with BOM and common text extensions)."""
+    try:
+        chunk = path.read_bytes()[:sniff]
+    except Exception:
+        return False
+    if not chunk:
+        return True
+    if path.suffix.lower() in TEXT_EXTS:
+        return True
+    if chunk.startswith(b"\xef\xbb\xbf"):  # UTF-8 BOM
+        return True
+    # ASCII-ish with tabs/newlines
+    return all(31 < b < 127 or b in b"\n\r\t" for b in chunk)
+
+def find_diec() -> Optional[str]:
+    """Locate diec on Linux/WSL or Windows (diec.exe)."""
+    for name in ("diec", "diec64", "die", "diec.exe", "die.exe"):
+        if shutil.which(name):
+            return name
+    return None
+
+def elide_middle(s: str, maxlen: int) -> str:
+    """Shorten long paths for compact progress line."""
+    if len(s) <= maxlen:
+        return s
+    head = maxlen // 2 - 1
+    tail = maxlen - head - 1
+    return s[:head] + "…" + s[-tail:]
+
+# ---------- main ------------------------------------------------------------
+def build_recon():
+    # Command-line flags to enable/disable modules
+    import argparse
+    parser = argparse.ArgumentParser(description="Generate recon_<folder>.txt for RE CTF folder")
+    parser.add_argument('folder', nargs='?', type=Path, default=Path('.'), help='root folder of challenge')
+    parser.add_argument('-o','--out', type=Path, default=None, help='output file path (default: recon_<folder>.txt in the folder)')
+    parser.add_argument('-l','--level', type=int, default=0,
+                        help='shorthand: level>=1 skip diec, >=2 skip fileinfo')
+    parser.add_argument('--skip-diec', action='store_true', help='skip detect-it-easy scan')
+    parser.add_argument('--skip-fileinfo', action='store_true', help='skip file info step')
+    parser.add_argument('-d','--depth', type=int, default=0,
+                        help='max folder depth for scanning (0 only root, 1 include 1-level subdirs, etc.)')
+    parser.add_argument('--no-progress', action='store_true',
+                        help='disable live progress output (useful for CI)')
+    args = parser.parse_args()
+
+    if args.level >= 1:
+        args.skip_diec = True
+    if args.level >= 2:
+        args.skip_fileinfo = True
+    max_depth = args.depth
+
+    folder = args.folder
+    folder_abs = folder.resolve()
+    default_out = folder_abs / f"recon_{folder_abs.name}.txt"
+    out_path = args.out if args.out is not None else default_out
+
+    # Prepare diec
+    diec = None if args.skip_diec else find_diec()
+
+    # -------- list targets first (to know total for progress) ---------------
+    def enumerate_targets(root: Path, depth: int) -> List[Path]:
+        base_parts = len(root.resolve().parts)
+        targets: List[Path] = []
+        for r, dirs, files in os.walk(root):
+            rp = Path(r)
+            rel = rp.resolve().parts[base_parts:]
+            d = len(rel)
+            if d > depth:
+                dirs.clear()
+                continue
+            for fname in sorted(files):
+                f = rp / fname
+                if should_skip(f):
+                    continue
+                targets.append(f)
+        return targets
+
+    targets = enumerate_targets(folder, max_depth)
+    total = len(targets)
+
+    # -------- progress printer ----------------------------------------------
+    show_progress = not args.no_progress
+    interactive = sys.stderr.isatty()
+    last_len = 0
+    recent = deque(maxlen=5)
+
+    def progress(done: int, current: str) -> None:
+        nonlocal last_len
+        if not show_progress:
+            return
+        bar_len = 24
+        frac = 1.0 if total == 0 else (done / total)
+        filled = int(bar_len * frac)
+        bar = "#" * filled + "-" * (bar_len - filled)
+        percent = 100.0 if total == 0 else (frac * 100.0)
+
+        now_disp = elide_middle(current.replace("\\", "/"), 60) if current else "-"
+        recent_disp = " | ".join(elide_middle(p.replace("\\", "/"), 18) for p in list(recent))
+        line = f"[{bar}] {done}/{total} ({percent:5.1f}%)  now: {now_disp}"
+        if recent_disp:
+            line += f"  last5: {recent_disp}"
+
+        if interactive:
+            pad = " " * max(0, last_len - len(line))
+            sys.stderr.write("\r" + line + pad)
+            sys.stderr.flush()
+            last_len = len(line)
+        else:
+            # Non-TTY: print occasionally
+            if done == 0 or done == total or done % 25 == 0:
+                sys.stderr.write(line + "\n")
+                sys.stderr.flush()
+
+    # -------- build report ---------------------------------------------------
+    t0 = time.time()
+    lines: List[str] = []
+
+    # Header: tree listing (captured; not printed live)
+    lines.append("# Challenge file map\n\n")
+    tree_depth = max_depth if max_depth > 0 else 1
+    if os.name == "nt":
+        tree_out = run(f'tree /A "{folder}"')
+    else:
+        tree_out = run(f'tree -a "{folder}" -L {tree_depth}')
+    lines.append("```text\n" + tree_out + "\n```\n")
+
+    # Walk over computed targets with live progress
+    progress(0, current="-")
+    for idx, f in enumerate(targets, 1):
+        rel_name = str(f.relative_to(folder))
+        # show "currently scanning"
+        progress(idx - 1, current=rel_name)
+
+        # emit per-file section to report
+        lines.append(f"\n## {rel_name}\n")
+
+        if f.is_symlink():
+            lines.append("### symlink\n")
+            if shutil.which("file"):
+                lines.append("```text\n" + run(f'file -h "{f}"') + "\n```\n")
+            else:
+                lines.append("```text\n<symlink>\n```\n")
+            recent.append(rel_name)
+            continue
+
+        # detect-it-easy (if available)
+        if diec:
+            lines.append("### detect-it-easy\n")
+            if os.name == "nt":
+                sig = run(f'{diec} --heuristicscan --verbose "{f}"')
+            else:
+                sig = run(f'{shlex.quote(diec)} --heuristicscan --verbose {shlex.quote(str(f))}')
+            sig = strip_ansi(sig)
+            lines.append('```\n' + sig + "\n```\n")
+
+        suffix = f.suffix.lower()
+        if suffix in SOURCE_EXTS:
+            code = f.read_text(encoding="utf-8-sig", errors="replace")  # drop BOM if present
+            clean = strip_comments(code, suffix)
+            lines.append("### stripped source\n")
+            lines.append("```c\n" + clean + "\n```\n")
+        elif is_text(f):
+            try:
+                # Normalize CRLF->LF and strip BOM automatically
+                text = f.read_text(encoding="utf-8-sig", errors="replace").replace("\r\n", "\n")
+            except Exception as e:
+                lines.append("### text content (read error)\n")
+                lines.append("```text\n" + str(e) + "\n```\n")
+            else:
+                lines.append("### text content\n")
+                snippet = text[:50_000] + ("\n[...truncated...]" if len(text) > 50_000 else "")
+                lines.append("```text\n" + snippet + "\n```\n")
+        else:
+            if not args.skip_fileinfo and shutil.which("file"):
+                lines.append("### file info\n")
+                info = run(f'file "{f}"')
+                lines.append("```text\n" + info + "\n```\n")
+
+        recent.append(rel_name)
+
+    # final progress line
+    progress(total, current="-")
+    if show_progress and interactive:
+        sys.stderr.write("\n")
+
+    # Force LF-only newlines to avoid CRLF/LF mixing when running on Windows
+    with open(out_path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("".join(lines))
+
+    dt = time.time() - t0
+    print(f"[+] recon.txt written to {out_path.resolve()}  (scanned {total} files in {dt:.2f}s)")
+
+if __name__ == "__main__":
+    build_recon()
+

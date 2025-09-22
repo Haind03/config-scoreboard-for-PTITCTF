@@ -3,115 +3,127 @@
 {{ super() }}
 <style>
   :root{
-    /* Adjust sticky column widths */
-    --w-place: 40px; /* Reduced width for Rank column */
-    --w-team: 150px; /* Reduced width for Team column */
-    --w-score: 60px; /* Reduced width for Score column */
-    --w-divider: 16px; /* Width for the empty divider column */
+    /* Sticky column widths */
+    --w-place:   56px;   /* Rank */
+    --w-team:    150px;  /* Team */
+    --w-region:  100px;  /* Group */
+    --w-score:    70px;  /* Score */
+    --w-solved:   70px;  /* Solved */
+    --w-divider:  16px;  /* Ngăn cách */
+    --w-chal:     55px;  /* Mỗi cột challenge */
+
+    /* Màu ăn theo theme CTFd */
+    --bg: var(--bg, #fff);
+    --fg: var(--text, #222);
+    --line: var(--line, rgba(0,0,0,.08));
+    --muted: var(--muted, #666);
+    --hover: rgba(125, 125, 255, .08);
+    --cat-bg: rgba(0,0,0,.03);
+    --row-zebra: rgba(0,0,0,.02);
   }
 
-  /* Adjust challenge column width */
+  .matrix{
+    display:flex; justify-content:center;
+    overflow:auto; max-width:100%;
+    border:1px solid var(--line); border-radius:12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.04);
+  }
+  table#scoreboard{
+    margin:auto; border-collapse:separate; border-spacing:0;
+    table-layout:auto; width:max-content; color:var(--fg);
+  }
+  #scoreboard th, #scoreboard td{ padding:8px 10px; vertical-align:middle; }
+  #scoreboard th.chalname, #scoreboard td.chalmark, #scoreboard th.score { padding:6px 4px; }
+
+  /* Header sticky khi cuộn dọc */
+  #scoreboard thead th{ position:sticky; top:0; z-index:4; background:var(--bg); }
+
+  /* Hàng & hiệu ứng */
+  #scoreboard tbody tr:nth-child(odd){ background:var(--row-zebra); }
+  #scoreboard .col-hover{ background:var(--hover) !important; }
+  #scoreboard tbody tr:hover td{ background:var(--hover); }
+  #scoreboard .team-link{ font-weight:600; text-decoration:none; }
+  #scoreboard .team-link:hover{ text-decoration:underline; }
+
+  /* ---- Sticky các cột đầu ---- */
+  .col-place, .col-team, .col-region, .col-score, .col-solved, .col-divider{
+    position:sticky; z-index:3; background:var(--bg);
+  }
+  .col-place  { left:0;                                        width:var(--w-place);  min-width:var(--w-place);  max-width:var(--w-place);  text-align:center; font-weight:700; }
+  .col-team   { left:var(--w-place);                           width:var(--w-team);   min-width:var(--w-team);   max-width:var(--w-team); }
+  .col-region { left:calc(var(--w-place) + var(--w-team));
+                width:var(--w-region); min-width:var(--w-region); max-width:var(--w-region); text-align:center; }
+  .col-score  { left:calc(var(--w-place) + var(--w-team) + var(--w-region));
+                width:var(--w-score);  min-width:var(--w-score);  max-width:var(--w-score);  text-align:center; }
+  .col-solved { left:calc(var(--w-place) + var(--w-team) + var(--w-region) + var(--w-score));
+                width:var(--w-solved); min-width:var(--w-solved); max-width:var(--w-solved); text-align:center; }
+  .col-divider{ left:calc(var(--w-place) + var(--w-team) + var(--w-region) + var(--w-score) + var(--w-solved));
+                width:var(--w-divider); min-width:var(--w-divider); max-width:var(--w-divider); border-right:1px solid var(--line); }
+
+  /* Cột challenge */
   th.chalname{
-    height:78px; width:48px; min-width:48px; max-width:48px; vertical-align:bottom; padding:0; font-size:12px; line-height:1;
+    height:78px; width:var(--w-chal); min-width:var(--w-chal); max-width:var(--w-chal);
+    vertical-align:bottom; padding:0; font-size:12px; line-height:1;
+  }
+  .chalname>div{ position:relative; left:26px; height:100%; overflow:hidden; transform:skew(-45deg,0); }
+  .chalname span{
+    position:absolute; bottom:28px; left:-30px; width:92px;
+    transform:skew(45deg,0) rotate(315deg);
+    display:inline-block; white-space:nowrap; text-overflow:ellipsis; overflow:hidden;
+  }
+  th.score{
+    width:var(--w-chal); min-width:var(--w-chal); max-width:var(--w-chal);
+    text-align:center; font-weight:600; color:var(--muted);
+  }
+  td.chalmark{
+    width:var(--w-chal); min-width:var(--w-chal); max-width:var(--w-chal);
+    text-align:center; font-size:18px;
   }
 
-  .chalname > div {
-    position: relative;
-    left: 26px;
-    height: 100%;
-    overflow: hidden;
-    transform: skew(-45deg, 0deg); /* Skew the column header */
+  /* Viền nhóm category */
+  .table-category-header{
+    background:var(--cat-bg); font-weight:800; text-transform:uppercase; letter-spacing:.02em;
+    border-bottom:1px solid var(--line);
+  }
+  .cat-first{ border-left:1px solid var(--line); }
+  .cat-last { border-right:1px solid var(--line); }
+
+  /* Badge Group */
+  .region-pill{
+    display:inline-block; padding:3px 10px; border-radius:999px; font-weight:600; font-size:12px;
+    border:1px solid transparent; user-select:none;
+  }
+  .r-hcm{ background:#e0f7fa; color:#006064; border-color:#b2ebf2; } /* teal */
+  .r-hn { background:#ede7f6; color:#4527a0; border-color:#d1c4e9; } /* purple */
+
+  .check{ font-weight:700; font-size:18px; }
+  .mark{ font-size:18px; }
+
+  #scoreboard thead tr:first-child th:first-child{ border-top-left-radius:12px; }
+  #scoreboard thead tr:first-child th:last-child { border-top-right-radius:12px; }
+
+  .legend-container{
+    margin-top:14px; text-align:center; font-size:13px; color:var(--muted);
   }
 
-  .chalname span {
-    position: absolute;
-    bottom: 28px;
-    left: -30px;
-    width: 92px;
-    transform: skew(45deg, 0deg) rotate(315deg); /* Rotate and skew text */
-    display: inline-block;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    overflow: hidden;
+  /* Bảo đảm các cột không-sticky trượt dưới sticky */
+  .matrix td:not(.col-place):not(.col-team):not(.col-region):not(.col-score):not(.col-solved):not(.col-divider),
+  .matrix th:not(.col-place):not(.col-team):not(.col-region):not(.col-score):not(.col-solved):not(.col-divider){
+    position:relative; z-index:1;
   }
-
-  .col-team {
-    text-align: center; /* Center align Team column */
-  }
-
-  .legend-container {
-    margin-top: 32px; /* Add spacing below the table */
-    text-align: center; /* Center align the legend */
-    font-size: 13px;
-    color: var(--muted);
-  }
-
-  .check {
-    font-weight: 700;
-    font-size: 18px;
-    color: #2e7d32; /* Restore green color for the check icon */
-  }
-
-  .matrix {
-    display: flex;
-    justify-content: center; /* Center the table horizontally */
-    overflow-x: auto; /* Enable horizontal scrolling */
-    max-width: 100%; /* Ensure it doesn't exceed the container */
-    border: 1px solid var(--line); /* Add border for better visibility */
-  }
-
-  table#scoreboard {
-    margin: auto; /* Center the table */
-    table-layout: auto; /* Allow flexible column widths */
-    width: max-content; /* Ensure table width adjusts to content */
-  }
-
-  /* Sticky columns for Rank, Team, and Score */
-  .col-place {
-    position: sticky;
-    left: 0;
-    z-index: 3; /* Ensure sticky columns are always on top */
-    background: var(--bg);
-  }
-
-  .col-team {
-    position: sticky;
-    left: var(--w-place);
-    z-index: 3; /* Ensure sticky columns are always on top */
-    background: var(--bg);
-  }
-
-  .col-score {
-    position: sticky;
-    left: calc(var(--w-place) + var(--w-team));
-    z-index: 3; /* Ensure sticky columns are always on top */
-    background: var(--bg);
-  }
-
-  .col-after-score {
-    position: sticky;
-    left: calc(var(--w-place) + var(--w-team) + var(--w-score)); /* Position it after the Score column */
-    z-index: 3; /* Ensure it stays on top */
-    background: var(--bg); /* Ensure consistent background color */
-  }
-
-  /* Ensure non-sticky columns scroll below sticky ones */
-  .matrix td:not(.col-place):not(.col-team):not(.col-score):not(.col-after-score),
-  .matrix th:not(.col-place):not(.col-team):not(.col-score):not(.col-after-score) {
-    position: relative;
-    z-index: 1;
-  }
-
 </style>
 {% endblock %}
 
 {% set en = request.cookies.get('Scr1wCTFdLanguage') == 'en' %}
 {% set mode_url = 'teams' if get_config('user_mode') == 'teams' else 'users' %}
+{# Danh sách team thuộc PTIT-HCM #}
+{% set HCM_TEAMS = ['tml','Aw4k3n','DWY_YK','3xpl017Cr3w','n0_Fl6g_N0_L0ve'] %}
 
 {% block content %}
 <div class="jumbotron home">
-  <div class="container">
+  <div class="container d-flex align-items-center justify-content-between">
     <h1><b>{{ "Scoreboard" if en else "Bảng điểm" }}</b></h1>
+    <button id="reset-button" class="btn btn-sm btn-outline-secondary">{{ "Reset view" if en else "Back" }}</button>
   </div>
 </div>
 
@@ -122,47 +134,65 @@
   <div class="matrix dragscroll">
     <table id="scoreboard" class="table">
       <thead>
-      <tr>
-        <th rowspan="4" class="sticky col-place"><b>{{ "Rank" }}</b></th>
-        <th rowspan="4" class="sticky col-team"><b>{{ "Team" }}</b></th>
-        <th rowspan="4" class="sticky col-score score-col"><b>{{ "Score" }}</b></th>
+        <tr>
+          <!-- rowspan = 3 để khớp 3 hàng header -->
+          <th rowspan="3" class="col-place"><b>{{ "Rank" if en else "Rank" }}</b></th>
+          <th rowspan="3" class="col-team"><b>{{ "Team" if en else "Team" }}</b></th>
+          <th rowspan="3" class="col-region"><b>{{ "Region" if en else "Group" }}</b></th>
+          <th rowspan="3" class="col-score"><b>{{ "Score" if en else "Score" }}</b></th>
+          <th rowspan="3" class="col-solved"><b>{{ "Solved" if en else "Solved" }}</b></th>
+          <th rowspan="3" class="col-divider"></th>
 
-        {% for cat in categories %}
-          <th class="table-category-header" colspan="{{ cat.count }}"><b>{{ cat.category }}</b></th>
-        {% endfor %}
-      </tr>
-      <tr>
-        {% for chal in challenges %}
-          {% set i = loop.index0 %}
-          {% set prevcat = challenges[i-1].category if i>0 else None %}
-          {% set nextcat = challenges[i+1].category if i+1 < (challenges|length) else None %}
-          {% set is_first = prevcat != chal.category %}
-          {% set is_last  = nextcat != chal.category %}
-          <th class="chalname {{ 'cat-first' if is_first }} {{ 'cat-last' if is_last }}" title="{{ chal.category }}">
-            <div><span>{{ chal.name }}</span></div>
-          </th>
-        {% endfor %}
-      </tr>
-      <tr>
-        {% for chal in challenges %}
-          {% set i = loop.index0 %}
-          {% set prevcat = challenges[i-1].category if i>0 else None %}
-          {% set nextcat = challenges[i+1].category if i+1 < (challenges|length) else None %}
-          {% set is_first = prevcat != chal.category %}
-          {% set is_last  = nextcat != chal.category %}
-          <th class="score {{ 'cat-first' if is_first }} {{ 'cat-last' if is_last }}">{{ chal.value }}</th>
-        {% endfor %}
-      </tr>
+          {% for cat in categories %}
+            <th class="table-category-header" colspan="{{ cat.count }}"><b>{{ cat.category }}</b></th>
+          {% endfor %}
+        </tr>
+
+        <!-- Hàng tiêu đề challenge -->
+        <tr>
+          {% for chal in challenges %}
+            {% set i = loop.index0 %}
+            {% set prevcat = challenges[i-1].category if i>0 else None %}
+            {% set nextcat = challenges[i+1].category if i+1 < (challenges|length) else None %}
+            {% set is_first = prevcat != chal.category %}
+            {% set is_last  = nextcat != chal.category %}
+            <th class="chalname {{ 'cat-first' if is_first }} {{ 'cat-last' if is_last }}" title="{{ chal.category }}">
+              <div><span>{{ chal.name }}</span></div>
+            </th>
+          {% endfor %}
+        </tr>
+
+        <!-- Hàng điểm challenge -->
+        <tr>
+          {% for chal in challenges %}
+            {% set i = loop.index0 %}
+            {% set prevcat = challenges[i-1].category if i>0 else None %}
+            {% set nextcat = challenges[i+1].category if i+1 < (challenges|length) else None %}
+            {% set is_first = prevcat != chal.category %}
+            {% set is_last  = nextcat != chal.category %}
+            <th class="score {{ 'cat-first' if is_first }} {{ 'cat-last' if is_last }}">{{ chal.value|int }}</th>
+          {% endfor %}
+        </tr>
       </thead>
 
       <tbody>
-      {% for team in standings %}
+        {% for team in standings %}
+        {% set is_hcm = team.name in HCM_TEAMS %}
+        {% set region = 'PTIT-HCM' if is_hcm else 'PTIT-HN' %}
         <tr>
-          <td class="sticky col-place">{{ loop.index }}</td>
-          <td class="sticky col-team">
+          <td class="col-place">{{ loop.index }}</td>
+
+          <td class="col-team">
             <a class="team-link" href="{{ request.script_root }}/{{ mode_url }}/{{ team.id }}" target="_blank">{{ team.name }}</a>
           </td>
-          <td class="sticky col-score score-col">{{ team.total_score }}</td>
+
+          <td class="col-region">
+            <span class="region-pill {{ 'r-hcm' if is_hcm else 'r-hn' }}">{{ region }}</span>
+          </td>
+
+          <td class="col-score">{{ team.total_score }}</td>
+          <td class="col-solved">{{ team.challenge_solved|length }}</td>
+          <td class="col-divider"></td>
 
           {% for chal in challenges %}
             {% set i = loop.index0 %}
@@ -183,15 +213,15 @@
                 {% elif ns.rank == 3 %}
                   {% set ns.icon = '🥉' %}
                 {% else %}
-                  {% set ns.icon = '🚩' %}
+                  {% set ns.icon = '✔' %}
                 {% endif %}
               {% endif %}
             {% endfor %}
 
             <td class="chalmark {{ 'cat-first' if is_first }} {{ 'cat-last' if is_last }} {{ 'is-solved' if ns.solved }}">
               {% if ns.solved %}
-                {% if ns.icon == '🚩' %}
-                  <span class="check">🚩</span> {# Changed check icon to triangular flag icon #}
+                {% if ns.icon == '✔' %}
+                  <span class="check">🚩</span>
                 {% else %}
                   <span class="mark">{{ ns.icon }}</span>
                 {% endif %}
@@ -199,13 +229,15 @@
             </td>
           {% endfor %}
         </tr>
-      {% endfor %}
+        {% endfor %}
       </tbody>
     </table>
   </div>
+
   <div class="legend-container">
     <b>{{ "Legend" if en else "Điểm thưởng" }}:</b>
-    <span class="mark">🥇</span> 1st + 10% &nbsp; <span class="mark">🥈</span> 2nd + 5% &nbsp; <span class="mark">🥉</span> 3rd + 3% &nbsp; <span class="check">🚩</span> {{ "Solved" if en else "Đã giải" }}
+    <span class="mark">🥇</span> 1st +10% &nbsp; <span class="mark">🥈</span> 2nd +5% &nbsp;
+    <span class="mark">🥉</span> 3rd +3% &nbsp; <span class="check">🚩</span> {{ "Solved" if en else "Đã giải" }}
   </div>
   {% endif %}
 </div>
@@ -215,33 +247,33 @@
 {{ super() }}
 <script src="{{ request.script_root }}/plugins/matrix/static/dragscroll.js"></script>
 <script>
-  // highlight theo cột cho dễ dò
-  document.addEventListener('DOMContentLoaded', () => {
-    const table = document.getElementById('scoreboard');
-    if (!table) return;
-    let last = -1;
-    table.addEventListener('mouseover', e => {
-      const cell = e.target.closest('td,th'); if (!cell) return;
-      const col = cell.cellIndex; if (col === last) return;
-      table.querySelectorAll('.col-hover').forEach(el => el.classList.remove('col-hover'));
-      for (const r of table.rows){ if (r.cells[col]) r.cells[col].classList.add('col-hover'); }
-      last = col;
-    });
-    table.addEventListener('mouseleave', () => {
-      table.querySelectorAll('.col-hover').forEach(el => el.classList.remove('col-hover'));
-      last = -1;
-    });
+document.addEventListener('DOMContentLoaded', () => {
+  const table = document.getElementById('scoreboard');
+  if (!table) return;
 
-    // Reset functionality to show full scoreboard
-    const resetButton = document.getElementById('reset-button');
-    if (resetButton) {
-      resetButton.addEventListener('click', () => {
-        const matrixContainer = document.querySelector('.matrix');
-        if (matrixContainer) {
-          matrixContainer.scrollLeft = 0; // Scroll to the beginning
-        }
-      });
-    }
+  // highlight theo cột
+  let last = -1;
+  table.addEventListener('mouseover', e => {
+    const cell = e.target.closest('td,th'); if (!cell) return;
+    const col = cell.cellIndex; if (col === last) return;
+    table.querySelectorAll('.col-hover').forEach(el => el.classList.remove('col-hover'));
+    for (const r of table.rows){ if (r.cells[col]) r.cells[col].classList.add('col-hover'); }
+    last = col;
   });
+  table.addEventListener('mouseleave', () => {
+    table.querySelectorAll('.col-hover').forEach(el => el.classList.remove('col-hover'));
+    last = -1;
+  });
+
+  // nút về đầu bảng (reset view)
+  const resetButton = document.getElementById('reset-button');
+  if (resetButton){
+    resetButton.addEventListener('click', () => {
+      const matrixContainer = document.querySelector('.matrix');
+      if (matrixContainer) matrixContainer.scrollLeft = 0;
+      window.scrollTo({ top: document.querySelector('.matrix').getBoundingClientRect().top + window.scrollY - 80, behavior: 'smooth' });
+    });
+  }
+});
 </script>
 {% endblock %}
